@@ -16,11 +16,12 @@ interface TryOnModalProps {
   open: boolean;
   onClose: () => void;
   onComplete: (result: TryOnResponse) => void;
+  garmentImage: string;
   color: ProductColor;
   size: ProductSize;
 }
 
-export function TryOnModal({ open, onClose, onComplete, color, size }: TryOnModalProps) {
+export function TryOnModal({ open, onClose, onComplete, garmentImage, color, size }: TryOnModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [modelId, setModelId] = useState<string>();
@@ -28,10 +29,21 @@ export function TryOnModal({ open, onClose, onComplete, color, size }: TryOnModa
 
   if (!open) return null;
 
-  const submit = () => mutation.mutate(
-    { image: file, modelId, productId: 'linen-jacket-loose', color, size },
-    { onSuccess: onComplete },
-  );
+  const submit = () => {
+    const selectedModel = models.find((model) => model.id === modelId);
+    mutation.mutate(
+      {
+        image: file ?? selectedModel?.image ?? null,
+        modelId,
+        garmentImage,
+        productId: 'linen-jacket-loose',
+        color,
+        size,
+      },
+      { onSuccess: onComplete },
+    );
+  };
+  const isLoading = mutation.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="try-on-title">
@@ -40,10 +52,10 @@ export function TryOnModal({ open, onClose, onComplete, color, size }: TryOnModa
           <div><p className="eyebrow">AI virtual try-on</p><h2 id="try-on-title" className="mt-2 font-display text-3xl font-bold">Mở phòng thử đồ</h2></div>
           <button onClick={onClose} className="rounded-full p-2 hover:bg-sand" aria-label="Đóng"><X /></button>
         </div>
-        {mutation.isPending ? (
+        {isLoading ? (
           <div className="flex min-h-[520px] flex-col items-center justify-center px-8 py-16 text-center">
             <div className="relative h-28 w-28"><div className="absolute inset-0 animate-spin-slow rounded-full border-4 border-sand border-t-moss" /><Sparkles className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-clay" size={30} /></div>
-            <p className="eyebrow mt-9">Inference đang chạy</p><h3 className="mt-4 font-display text-3xl font-bold">AI đang lên đồ cho bạn</h3>
+            <p className="eyebrow mt-9">Inference đang chạy</p><h3 className="mt-4 font-display text-3xl font-bold">AI đang phối đồ, vui lòng chờ trong giây lát...</h3>
             <p className="mt-4 max-w-md leading-7 text-ink/60">IDM-VTON / VITON-HD đang kết hợp OpenPose để căn chỉnh phom áo tự nhiên nhất.</p>
             <div className="mt-8 h-2 w-full max-w-md overflow-hidden rounded-full bg-sand"><div className="h-full w-2/3 animate-pulse rounded-full bg-moss" /></div>
             <div className="mt-8 flex items-center gap-3 rounded-xl bg-clay/10 px-5 py-4 text-left"><LockKeyhole className="shrink-0 text-clay" size={20} /><p className="text-sm font-semibold">Ảnh của bạn chỉ được xử lý tạm thời trên RAM và tự động xóa sạch sau 5 phút.</p></div>
@@ -61,7 +73,7 @@ export function TryOnModal({ open, onClose, onComplete, color, size }: TryOnModa
               <p className="font-bold">Hoặc chọn model mẫu</p><div className="mt-5 grid grid-cols-3 gap-2">{models.map((model) => <button key={model.id} onClick={() => { setModelId(model.id); setFile(null); }} className={cn('overflow-hidden rounded-xl border-2', modelId === model.id ? 'border-ink' : 'border-transparent')}><img src={model.image} alt={model.label} className="aspect-square w-full object-cover" /><span className="block py-2 text-xs font-semibold">{model.label}</span></button>)}</div>
               <div className="mt-7 space-y-4 border-t border-ink/10 pt-6"><div className="flex gap-3"><Camera className="text-moss" size={19} /><p className="text-sm leading-5">Đứng thẳng, nhìn trực diện và không bị che khuất.</p></div><div className="flex gap-3"><Sparkles className="text-moss" size={19} /><p className="text-sm leading-5">Mô hình Diffusion-based: IDM-VTON / VITON-HD + OpenPose.</p></div></div>
             </div>
-            <div className="flex items-center justify-between border-t border-ink/10 pt-6 lg:col-span-2"><p className="max-w-md text-xs leading-5 text-ink/50">Bằng cách tiếp tục, bạn đồng ý với chính sách xử lý ảnh tạm thời của Áo Ảo Thật.</p><button onClick={submit} disabled={!file && !modelId} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={18} /> Bắt đầu thử đồ</button></div>
+            <div className="flex items-center justify-between border-t border-ink/10 pt-6 lg:col-span-2"><p className="max-w-md text-xs leading-5 text-ink/50">Bằng cách tiếp tục, bạn đồng ý với chính sách xử lý ảnh tạm thời của Áo Ảo Thật.</p><div className="text-right">{mutation.isError && <p role="alert" className="mb-2 text-sm text-red-700">{mutation.error.message}</p>}<button onClick={submit} disabled={!file && !modelId} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={18} /> Bắt đầu thử đồ</button></div></div>
           </div>
         )}
       </div>

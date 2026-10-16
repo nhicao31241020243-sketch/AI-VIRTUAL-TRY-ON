@@ -10,11 +10,16 @@ export interface Product {
 }
 
 export interface TryOnRequest {
-  image: File | null;
+  image: File | string | null;
   modelId?: string;
+  garmentImage: string;
   productId: string;
   color: ProductColor;
   size: ProductSize;
+}
+
+export interface TryOnServiceResponse {
+  result_image_url: string;
 }
 
 export interface TryOnResponse {
