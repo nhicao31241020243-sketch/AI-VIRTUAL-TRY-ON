@@ -32,7 +32,7 @@ export function ProcessingScreen({ status, onCancel }: ProcessingScreenProps) {
       <p className="mt-3 max-w-md text-sm leading-6 text-ink/60">
         {status === 'uploading'
           ? 'Ảnh được nén trực tiếp trên thiết bị trước khi gửi đi.'
-          : 'Quá trình tạo ảnh có thể mất đến 60 giây.'}
+          : 'Quá trình tạo ảnh có thể mất đến 90 giây.'}
       </p>
       <div
         className="mt-7 h-2 w-full max-w-md overflow-hidden rounded-full bg-sand"

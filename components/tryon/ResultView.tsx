@@ -84,7 +84,10 @@ export function ResultView({
           <p className="mt-3 text-sm text-ink/60">{product.name} · Thử đồ AI</p>
           {elapsedLabel && <p className="mt-1 text-xs text-ink/45">{elapsedLabel}</p>}
         </div>
-        <button type="button" onClick={onRetry} className="btn-secondary self-start py-3 sm:self-auto">Thử lại với ảnh khác</button>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <button type="button" onClick={onRetry} className="btn-secondary py-3">Thử lại</button>
+          <a href="/products" className="btn-secondary py-3">Thử món khác</a>
+        </div>
       </div>
 
       <div className="mt-8 grid gap-8 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_320px]">

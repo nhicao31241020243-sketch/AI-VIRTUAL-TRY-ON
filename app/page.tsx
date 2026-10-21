@@ -75,7 +75,10 @@ function ProductPage() {
           fitAssessment={getFitAssessment(size, fitProfile)}
           onColorChange={(nextColor) => rerunTryOn(nextColor, size)}
           onSizeChange={(nextSize) => rerunTryOn(color, nextSize)}
-          onRetry={() => { tryOn.reset(); setModalOpen(true); }}
+          onRetry={() => {
+            setModalOpen(true);
+            tryOn.retry();
+          }}
           onAddToCart={addToCart}
           onBuyNow={addToCart}
           cartMessage={cartMessage}
@@ -92,6 +95,7 @@ function ProductPage() {
             setFitProfile(nextFitProfile);
             void tryOn.start(source, selectedProduct, garmentImage, selectedColorName, selectedSize);
           }}
+          onRetry={() => tryOn.retry()}
           onCancelProcessing={() => tryOn.reset()}
         />
       </>
@@ -203,6 +207,7 @@ function ProductPage() {
           setFitProfile(nextFitProfile);
           void tryOn.start(source, selectedProduct, garmentImage, selectedColorName, selectedSize);
         }}
+        onRetry={() => tryOn.retry()}
         onCancelProcessing={() => tryOn.reset()}
       />
     </>

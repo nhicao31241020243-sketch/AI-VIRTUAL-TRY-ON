@@ -31,6 +31,7 @@ interface TryOnModalProps {
     size: string,
     fitProfile: { heightCm?: number; weightKg?: number },
   ) => void;
+  onRetry: () => void;
   onCancelProcessing: () => void;
 }
 
@@ -43,6 +44,7 @@ export function TryOnModal({
   state,
   onClose,
   onStart,
+  onRetry,
   onCancelProcessing,
 }: TryOnModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -287,7 +289,14 @@ export function TryOnModal({
                     <p role="alert" className="text-sm font-semibold text-ink">{state.error}</p>
                     <p className="mt-1 text-xs text-ink/55">Bạn có thể thử lại hoặc chọn một ảnh khác.</p>
                   </div>
-                  <button type="button" onClick={start} disabled={!selectedSource || !privacyAccepted} className="btn-secondary py-2.5 disabled:opacity-40">Thử lại</button>
+                  <button
+                    type="button"
+                    onClick={() => { if (selectedSource) start(); else onRetry(); }}
+                    disabled={!privacyAccepted}
+                    className="btn-secondary py-2.5 disabled:opacity-40"
+                  >
+                    Thử lại
+                  </button>
                 </div>
               )}
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
