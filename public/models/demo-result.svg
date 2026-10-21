@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800">
+  <rect width="600" height="800" fill="#e8dfd2"/>
+  <circle cx="300" cy="150" r="72" fill="#c9a080"/>
+  <path d="M222 240q78-42 156 0l68 214-52 24-30-111 43 360H193l43-360-30 111-52-24z" fill="#d4c1a6"/>
+  <path d="M222 240q78-42 156 0l68 214-52 24-30-111 43 360H193l43-360-30 111-52-24z" fill="none" stroke="#50624d" stroke-width="8"/>
+  <rect x="170" y="680" width="260" height="58" rx="18" fill="#1d2420"/>
+  <text x="300" y="718" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="26" font-weight="700">ẢNH MINH HỌA DEMO</text>
+</svg>

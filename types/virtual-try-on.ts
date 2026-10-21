@@ -1,30 +1,19 @@
-export type ProductColor = 'Beige' | 'Olive' | 'Black';
-export type ProductSize = 'S' | 'M' | 'L' | 'XL';
-
-export interface Product {
-  id: string;
-  name: string;
-  price: number;
-  description: string;
-  images: string[];
+export interface TryOnPredictionInput {
+  humanImg: string;
+  garmentImg: string;
+  garmentDesc: string;
+  category: import('@/types/product').ProductCategory;
 }
 
-export interface TryOnRequest {
-  image: File | string | null;
-  modelId?: string;
-  garmentImage: string;
-  productId: string;
-  color: ProductColor;
-  size: ProductSize;
-}
+export type TryOnPredictionStatus =
+  | 'starting'
+  | 'processing'
+  | 'succeeded'
+  | 'failed'
+  | 'canceled';
 
-export interface TryOnServiceResponse {
-  result_image_url: string;
-}
-
-export interface TryOnResponse {
-  id: string;
-  beforeImageUrl: string;
-  afterImageUrl: string;
-  status: 'completed';
+export interface TryOnPredictionResult {
+  status: TryOnPredictionStatus;
+  output: string | null;
+  error: string | null;
 }

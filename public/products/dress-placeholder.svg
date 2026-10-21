@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1100">
+  <rect width="900" height="1100" fill="#e8dfd2"/>
+  <path d="m365 155 85-35 85 35 80 215-75 42 125 430H235l125-430-75-42z" fill="#a95e49" stroke="#50624d" stroke-width="12" stroke-linejoin="round"/>
+  <path d="m365 155 85 125 85-125M450 280l-90 133M450 280l90 133" fill="none" stroke="#50624d" stroke-width="10"/>
+  <text x="450" y="1010" text-anchor="middle" fill="#1d2420" font-family="Arial,sans-serif" font-size="34" font-weight="700">THAY BẰNG ẢNH SẢN PHẨM THẬT</text>
+</svg>
