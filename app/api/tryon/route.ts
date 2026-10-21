@@ -8,7 +8,6 @@ export const runtime = 'nodejs';
 const DATA_IMAGE_PATTERN = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
 const CATEGORIES: ProductCategory[] = ['upper_body', 'lower_body', 'dresses'];
 const rateLimitEntries = new Map<string, number[]>();
-const demoPredictions = new Map<string, number>();
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true'
   || !process.env.REPLICATE_API_TOKEN?.trim();
 const DEMO_DELAY_MS = 3000;
@@ -175,8 +174,7 @@ export async function POST(request: Request) {
   }
 
   if (DEMO_MODE) {
-    const id = `demo-${crypto.randomUUID()}`;
-    demoPredictions.set(id, Date.now());
+    const id = `demo-${Date.now()}-${crypto.randomUUID()}`;
     return NextResponse.json({ id });
   }
   if (!replicate) {
@@ -216,11 +214,11 @@ export async function GET(request: Request) {
   }
 
   if (DEMO_MODE && id.startsWith('demo-')) {
-    const startedAt = demoPredictions.get(id);
-    if (!startedAt) return errorResponse('Không tìm thấy phiên demo thử đồ.', 404);
+    const demoId = /^demo-(\d{13})-[\da-f-]{36}$/i.exec(id);
+    if (!demoId) return errorResponse('Không tìm thấy phiên demo thử đồ.', 404);
+    const startedAt = Number(demoId[1]);
     const done = Date.now() - startedAt >= DEMO_DELAY_MS;
     if (done) {
-      demoPredictions.delete(id);
       return NextResponse.json({
         status: 'succeeded',
         output: '/models/demo-result.svg',

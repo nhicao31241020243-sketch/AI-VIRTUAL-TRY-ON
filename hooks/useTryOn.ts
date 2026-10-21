@@ -59,6 +59,13 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
+function isTimeoutReason(reason: unknown): boolean {
+  return typeof reason === 'object'
+    && reason !== null
+    && 'name' in reason
+    && reason.name === 'TimeoutError';
+}
+
 function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     const handleAbort = () => {
@@ -201,8 +208,7 @@ export function useTryOn() {
       }
       throw new Error('Lượt thử đồ đã quá thời gian chờ 90 giây. Vui lòng thử lại.');
     } catch (error) {
-      const timedOut = controller.signal.reason instanceof Error
-        && controller.signal.reason.name === 'TimeoutError';
+      const timedOut = isTimeoutReason(controller.signal.reason);
       const inferenceTimeMs = inferenceStartedAt === null
         ? null
         : Date.now() - inferenceStartedAt;
