@@ -9,8 +9,10 @@ const DATA_IMAGE_PATTERN = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+=
 const CATEGORIES: ProductCategory[] = ['upper_body', 'lower_body', 'dresses'];
 const rateLimitEntries = new Map<string, number[]>();
 const demoPredictions = new Map<string, number>();
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true'
+  || !process.env.REPLICATE_API_TOKEN?.trim();
 const DEMO_DELAY_MS = 3000;
+const RATE_LIMIT_ENABLED = process.env.TRYON_RATE_LIMIT_ENABLED !== 'false';
 
 interface TryOnInput {
   humanImg: string;
@@ -122,16 +124,25 @@ function isTryOnInput(value: unknown): value is TryOnInput {
 
 function getReplicate(): Replicate | null {
   const token = process.env.REPLICATE_API_TOKEN;
-  return token?.trim() ? new Replicate({ auth: token }) : null;
+  return token?.trim() ? new Replicate({ auth: token.trim() }) : null;
+}
+
+function getModelConfig(): { model: string; version: string | null } | null {
+  const configured = process.env.REPLICATE_TRYON_MODEL?.trim() || TRYON_CONFIG.defaultModel;
+  const match = /^([a-z\d-]+\/[a-z\d._-]+)(?::([a-f\d]{64}))?$/i.exec(configured);
+  if (!match) return null;
+  return { model: match[1], version: match[2] ?? null };
 }
 
 export async function POST(request: Request) {
-  const rateLimit = checkRateLimit(request);
-  if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: 'Bạn đã thử quá nhiều lần. Vui lòng chờ một phút rồi thử lại.' },
-      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } },
-    );
+  if (RATE_LIMIT_ENABLED) {
+    const rateLimit = checkRateLimit(request);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Bạn đã thử quá nhiều lần. Vui lòng chờ một giờ rồi thử lại.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } },
+      );
+    }
   }
 
   const replicate = getReplicate();
@@ -173,6 +184,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    const modelConfig = getModelConfig();
+    if (!modelConfig) {
+      return errorResponse('Cấu hình REPLICATE_TRYON_MODEL không hợp lệ. Hãy dùng dạng chu-so-huu/ten-model hoặc kèm version SHA.', 500);
+    }
     const input = {
       [TRYON_CONFIG.inputFields.personImage]: body.humanImg,
       [TRYON_CONFIG.inputFields.garmentImage]: body.garmentImg,
@@ -180,9 +195,9 @@ export async function POST(request: Request) {
       [TRYON_CONFIG.inputFields.category]: body.category,
     };
     const signal = AbortSignal.timeout(TRYON_CONFIG.timeoutMs);
-    const prediction = TRYON_CONFIG.version
-      ? await replicate.predictions.create({ version: TRYON_CONFIG.version, input, signal })
-      : await replicate.predictions.create({ model: TRYON_CONFIG.model, input, signal });
+    const prediction = modelConfig.version
+      ? await replicate.predictions.create({ version: modelConfig.version, input, signal })
+      : await replicate.predictions.create({ model: modelConfig.model, input, signal });
     return NextResponse.json({ id: prediction.id });
   } catch {
     return errorResponse('Không thể bắt đầu thử đồ lúc này. Vui lòng thử lại sau.', 502);

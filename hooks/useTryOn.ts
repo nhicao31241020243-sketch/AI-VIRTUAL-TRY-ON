@@ -28,7 +28,14 @@ const INITIAL_STATE: TryOnState = {
 const POLL_INTERVAL_MS = 1500;
 const TIMEOUT_MS = TRYON_CONFIG.timeoutMs;
 const CLEANUP_AFTER_MS = 5 * 60_000;
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+
+interface LastTryOnRequest {
+  source: File | string;
+  product: Product;
+  garmentImage: string;
+  color: string;
+  size: string;
+}
 
 function wait(milliseconds: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -82,6 +89,7 @@ export function useTryOn() {
   const activeController = useRef<AbortController | null>(null);
   const cleanupTimer = useRef<number | null>(null);
   const requestTimeout = useRef<number | null>(null);
+  const lastRequest = useRef<LastTryOnRequest | null>(null);
 
   const clearCleanupTimer = useCallback(() => {
     if (cleanupTimer.current !== null) {
@@ -98,6 +106,7 @@ export function useTryOn() {
     activeController.current?.abort();
     activeController.current = null;
     clearCleanupTimer();
+    lastRequest.current = null;
     setState(INITIAL_STATE);
   }, [clearCleanupTimer]);
 
@@ -110,12 +119,14 @@ export function useTryOn() {
   ) => {
     if (activeController.current) return;
 
+    lastRequest.current = { source, product, garmentImage, color, size };
     const controller = new AbortController();
     activeController.current = controller;
     clearCleanupTimer();
     cleanupTimer.current = window.setTimeout(() => {
       controller.abort();
       if (activeController.current === controller) activeController.current = null;
+      lastRequest.current = null;
       setState(INITIAL_STATE);
     }, CLEANUP_AFTER_MS);
     requestTimeout.current = window.setTimeout(() => {
@@ -134,23 +145,6 @@ export function useTryOn() {
 
       inferenceStartedAt = Date.now();
       setState((current) => ({ ...current, status: 'processing', beforeImageUrl: humanImg }));
-      if (DEMO_MODE) {
-        await wait(3000, controller.signal);
-        const inferenceTimeMs = Date.now() - inferenceStartedAt;
-        setState({
-          status: 'success',
-          beforeImageUrl: humanImg,
-          resultImageUrl: '/models/demo-result.svg',
-          error: null,
-          inferenceTimeMs,
-        });
-        if (process.env.NODE_ENV === 'development') {
-          console.info(`[TryOn] inferenceTimeMs=${inferenceTimeMs}`);
-        }
-        recordMetric({ type: 'success', at: Date.now(), inferenceTimeMs });
-        return;
-      }
-
       const input: TryOnPredictionInput = {
         humanImg,
         garmentImg,
@@ -205,7 +199,7 @@ export function useTryOn() {
           return;
         }
       }
-      throw new Error('Lượt thử đồ đã quá thời gian chờ 60 giây. Vui lòng thử lại.');
+      throw new Error('Lượt thử đồ đã quá thời gian chờ 90 giây. Vui lòng thử lại.');
     } catch (error) {
       const timedOut = controller.signal.reason instanceof Error
         && controller.signal.reason.name === 'TimeoutError';
@@ -219,7 +213,7 @@ export function useTryOn() {
         setState((current) => ({
           ...current,
           status: 'error',
-          error: 'Lượt thử đồ đã quá thời gian chờ 60 giây. Vui lòng thử lại.',
+          error: 'Lượt thử đồ đã quá thời gian chờ 90 giây. Vui lòng thử lại.',
         }));
         recordMetric({
           type: 'error',
@@ -247,11 +241,25 @@ export function useTryOn() {
     }
   }, [clearCleanupTimer]);
 
+  const retry = useCallback(() => {
+    const previousRequest = lastRequest.current;
+    if (previousRequest) {
+      void start(
+        previousRequest.source,
+        previousRequest.product,
+        previousRequest.garmentImage,
+        previousRequest.color,
+        previousRequest.size,
+      );
+    }
+  }, [start]);
+
   useEffect(() => () => {
     clearCleanupTimer();
     activeController.current?.abort();
     activeController.current = null;
+    lastRequest.current = null;
   }, [clearCleanupTimer]);
 
-  return { state, start, reset };
+  return { state, start, retry, reset };
 }

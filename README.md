@@ -19,9 +19,14 @@ copy .env.example .env.local
 Thiết lập:
 
 - `REPLICATE_API_TOKEN`: API key từ Replicate.
+- `REPLICATE_TRYON_MODEL`: model Replicate dạng `chu-so-huu/ten-model`; có thể kèm version SHA 64 ký tự sau dấu `:`. Mặc định là `cuuupid/idm-vton`.
 - `NEXT_PUBLIC_DEMO_MODE`:
-  - `false` (mặc định): gọi Replicate thật.
+  - `false` (mặc định): gọi Replicate nếu đã cấu hình token.
   - `true`: chạy demo nội bộ, không gọi Replicate, trả ảnh mẫu sau ~3 giây.
+  - Khi chưa có `REPLICATE_API_TOKEN`, ứng dụng tự chuyển sang demo.
+- `TRYON_RATE_LIMIT_ENABLED`: bật giới hạn 5 lượt/IP mỗi giờ (mặc định `true`); chỉ tắt khi phát triển thử nghiệm.
+
+Ảnh người và ảnh sản phẩm được nén phía trình duyệt tối đa 1024px và 1MB mỗi ảnh. Thời gian chờ tối đa cho một lượt thử là 90 giây.
 
 ## 3) Chạy local
 
@@ -51,7 +56,9 @@ npm run start
 2. Import repo vào Vercel.
 3. Khai báo biến môi trường trong Project Settings:
    - `REPLICATE_API_TOKEN`
+   - `REPLICATE_TRYON_MODEL`
    - `NEXT_PUBLIC_DEMO_MODE`
+   - `TRYON_RATE_LIMIT_ENABLED`
 4. Deploy.
 
 ## 6) Quyền riêng tư

@@ -1,4 +1,5 @@
 import imageCompression from 'browser-image-compression';
+import { TRYON_CONFIG } from '@/lib/tryon-config';
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -14,12 +15,15 @@ export async function compressImage(file: File): Promise<File> {
   let compressed: File;
   try {
     compressed = await imageCompression(file, {
-      maxSizeMB: 1,
+      maxSizeMB: TRYON_CONFIG.maxImageBytes / (1024 * 1024) * 0.95,
       maxWidthOrHeight: 1024,
       useWebWorker: true,
     });
   } catch {
     throw new Error('Không thể xử lý ảnh này. Vui lòng chọn ảnh JPG, PNG hoặc WebP khác.');
+  }
+  if (compressed.size > TRYON_CONFIG.maxImageBytes) {
+    throw new Error('Ảnh sau khi nén vẫn vượt quá dung lượng cho phép. Vui lòng chọn ảnh khác.');
   }
   return new File([compressed], file.name, { type: compressed.type || file.type });
 }
@@ -72,8 +76,10 @@ async function convertImageUrlToJpeg(url: string): Promise<File> {
 }
 
 export async function imageToDataUrl(source: File | string): Promise<string> {
-  const file = typeof source === 'string'
-    ? await convertImageUrlToJpeg(source)
-    : await compressImage(source);
+  const file = await compressImage(
+    typeof source === 'string'
+      ? await convertImageUrlToJpeg(source)
+      : source,
+  );
   return fileToDataUrl(file);
 }
