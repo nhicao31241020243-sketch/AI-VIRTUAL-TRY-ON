@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
 import Replicate from 'replicate';
 import type { ProductCategory } from '@/types/product';
+import { createRateLimiter } from '@/lib/rate-limit';
 import { TRYON_CONFIG } from '@/lib/tryon-config';
 
 export const runtime = 'nodejs';
+// Hobby giới hạn tối đa 60s (có thể thấp hơn tùy cấu hình); POST chỉ tạo prediction nên rất nhanh.
+export const maxDuration = 60;
 
 const DATA_IMAGE_PATTERN = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
 const CATEGORIES: ProductCategory[] = ['upper_body', 'lower_body', 'dresses'];
-const rateLimitEntries = new Map<string, number[]>();
+const rateLimiter = createRateLimiter(TRYON_CONFIG.rateLimit);
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true'
   || !process.env.REPLICATE_API_TOKEN?.trim();
 const DEMO_DELAY_MS = 3000;
@@ -82,30 +85,6 @@ function getClientIp(request: Request): string {
   return ip.slice(0, 100);
 }
 
-function checkRateLimit(request: Request): { allowed: true } | { allowed: false; retryAfter: number } {
-  const now = Date.now();
-  const cutoff = now - TRYON_CONFIG.rateLimit.windowMs;
-  const ip = getClientIp(request);
-  const recentRequests = (rateLimitEntries.get(ip) ?? []).filter((timestamp) => timestamp > cutoff);
-
-  if (recentRequests.length >= TRYON_CONFIG.rateLimit.requests) {
-    rateLimitEntries.set(ip, recentRequests);
-    return {
-      allowed: false,
-      retryAfter: Math.max(1, Math.ceil((recentRequests[0] + TRYON_CONFIG.rateLimit.windowMs - now) / 1000)),
-    };
-  }
-
-  recentRequests.push(now);
-  rateLimitEntries.set(ip, recentRequests);
-  if (rateLimitEntries.size > 1000) {
-    for (const [key, timestamps] of rateLimitEntries) {
-      if (timestamps.every((timestamp) => timestamp <= cutoff)) rateLimitEntries.delete(key);
-    }
-  }
-  return { allowed: true };
-}
-
 function isTryOnInput(value: unknown): value is TryOnInput {
   if (!isRecord(value)) return false;
   const { humanImg, garmentImg, garmentDesc, category } = value;
@@ -135,7 +114,7 @@ function getModelConfig(): { model: string; version: string | null } | null {
 
 export async function POST(request: Request) {
   if (RATE_LIMIT_ENABLED) {
-    const rateLimit = checkRateLimit(request);
+    const rateLimit = await rateLimiter.check(getClientIp(request));
     if (!rateLimit.allowed) {
       return NextResponse.json(
         { error: 'Bạn đã thử quá nhiều lần. Vui lòng chờ một giờ rồi thử lại.' },
