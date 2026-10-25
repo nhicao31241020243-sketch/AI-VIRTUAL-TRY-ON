@@ -6,6 +6,7 @@ import { startTryOn } from '@/services/tryon';
 import { recordMetric } from '@/lib/metrics';
 import { TRYON_CONFIG } from '@/lib/tryon-config';
 import type { Product } from '@/types/product';
+import type { TryOnProvider } from '@/types/virtual-try-on';
 
 export type TryOnStatus = 'idle' | 'uploading' | 'processing' | 'success' | 'error';
 
@@ -13,6 +14,7 @@ export interface TryOnState {
   status: TryOnStatus;
   beforeImageUrl: string | null;
   resultImageUrl: string | null;
+  provider: TryOnProvider | null;
   error: string | null;
   inferenceTimeMs: number | null;
 }
@@ -21,6 +23,7 @@ const INITIAL_STATE: TryOnState = {
   status: 'idle',
   beforeImageUrl: null,
   resultImageUrl: null,
+  provider: null,
   error: null,
   inferenceTimeMs: null,
 };
@@ -126,7 +129,7 @@ export function useTryOn() {
 
       inferenceStartedAt = Date.now();
       setState((current) => ({ ...current, status: 'processing', beforeImageUrl: preparedImage.dataUrl }));
-      const resultImageUrl = await startTryOn({
+      const result = await startTryOn({
         image: preparedImage.file,
         productId: product.id,
         color,
@@ -138,7 +141,8 @@ export function useTryOn() {
       setState({
         status: 'success',
         beforeImageUrl: preparedImage.dataUrl,
-        resultImageUrl,
+        resultImageUrl: result.image,
+        provider: result.provider,
         error: null,
         inferenceTimeMs,
       });

@@ -1,8 +1,17 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Download, ShoppingBag, Sparkles } from 'lucide-react';
+import { Download, ShoppingBag, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { submitTryOnFeedback, type TryOnFeedbackInput } from '@/services/tryon';
 import type { Product } from '@/types/product';
+import type { TryOnProvider } from '@/types/virtual-try-on';
+
+const feedbackReasons: NonNullable<TryOnFeedbackInput['reason']>[] = [
+  'áo méo',
+  'sai màu',
+  'mặt/tay lỗi',
+  'khác',
+];
 
 interface ResultViewProps {
   product: Product;
@@ -11,6 +20,7 @@ interface ResultViewProps {
   beforeImageUrl: string;
   resultImageUrl: string;
   inferenceTimeMs: number | null;
+  provider: TryOnProvider | null;
   onColorChange: (color: string) => void;
   onSizeChange: (size: string) => void;
   onRetry: () => void;
@@ -27,6 +37,7 @@ export function ResultView({
   beforeImageUrl,
   resultImageUrl,
   inferenceTimeMs,
+  provider,
   onColorChange,
   onSizeChange,
   onRetry,
@@ -39,6 +50,10 @@ export function ResultView({
   const [isDragging, setIsDragging] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [stageWidth, setStageWidth] = useState(0);
+  const [feedbackRating, setFeedbackRating] = useState<TryOnFeedbackInput['rating'] | null>(null);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [feedbackPending, setFeedbackPending] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -69,6 +84,30 @@ export function ResultView({
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
       setDownloadError('Không thể tải ảnh xuống. Vui lòng thử lại.');
+    }
+  };
+
+  const sendFeedback = async (
+    rating: TryOnFeedbackInput['rating'],
+    reason?: TryOnFeedbackInput['reason'],
+  ) => {
+    if (!provider || inferenceTimeMs === null || feedbackPending || feedbackSubmitted) return;
+    setFeedbackPending(true);
+    setFeedbackError(null);
+    try {
+      await submitTryOnFeedback({
+        productId: product.id,
+        color,
+        provider,
+        durationMs: inferenceTimeMs,
+        rating,
+        ...(reason ? { reason } : {}),
+      });
+      setFeedbackSubmitted(true);
+    } catch (error) {
+      setFeedbackError(error instanceof Error ? error.message : 'Không thể gửi đánh giá. Vui lòng thử lại.');
+    } finally {
+      setFeedbackPending(false);
     }
   };
 
@@ -130,6 +169,9 @@ export function ResultView({
             <span className="absolute left-4 top-4 rounded-full bg-ink/80 px-3 py-1.5 text-xs font-bold text-white">TRƯỚC</span>
             <span className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1.5 text-xs font-bold text-ink">SAU</span>
           </div>
+          <p className="mt-3 text-xs leading-5 text-ink/55">
+            Ảnh do AI tạo, chỉ mang tính tham khảo. Độ chính xác phụ thuộc góc chụp và chất lượng ảnh.
+          </p>
           <label className="mt-4 block text-sm font-semibold">
             Điều chỉnh thanh trượt để so sánh
             <input
@@ -160,6 +202,51 @@ export function ResultView({
               {product.sizes.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
+          <section className="mt-5 rounded-xl border border-ink/10 bg-white p-4" aria-label="Đánh giá kết quả thử đồ">
+            <p className="text-sm font-semibold">Kết quả này hữu ích không?</p>
+            {feedbackSubmitted ? (
+              <p className="mt-3 text-sm text-moss" role="status">Cảm ơn bạn đã gửi đánh giá.</p>
+            ) : (
+              <>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setFeedbackRating('up'); void sendFeedback('up'); }}
+                    disabled={feedbackPending}
+                    aria-label="Đánh giá thích kết quả"
+                    className={`btn-secondary py-2 ${feedbackRating === 'up' ? 'border-moss text-moss' : ''}`}
+                  >
+                    <ThumbsUp size={17} /> Thích
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFeedbackRating('down')}
+                    disabled={feedbackPending}
+                    aria-label="Đánh giá không thích kết quả"
+                    className={`btn-secondary py-2 ${feedbackRating === 'down' ? 'border-clay text-clay' : ''}`}
+                  >
+                    <ThumbsDown size={17} /> Chưa tốt
+                  </button>
+                </div>
+                {feedbackRating === 'down' && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {feedbackReasons.map((reason) => (
+                      <button
+                        type="button"
+                        key={reason}
+                        onClick={() => { void sendFeedback('down', reason); }}
+                        disabled={feedbackPending}
+                        className="rounded-full border border-ink/15 px-3 py-1.5 text-xs hover:border-ink/50 disabled:opacity-50"
+                      >
+                        {reason}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {feedbackError && <p role="alert" className="mt-2 text-xs text-red-700">{feedbackError}</p>}
+              </>
+            )}
+          </section>
           <button type="button" onClick={download} className="btn-secondary mt-5 w-full py-3"><Download size={17} /> Lưu ảnh</button>
           {downloadError && <p role="alert" className="mt-2 text-xs text-red-700">{downloadError}</p>}
           <button type="button" onClick={onAddToCart} className="btn-secondary mt-3 w-full py-3"><ShoppingBag size={17} /> Thêm vào giỏ</button>

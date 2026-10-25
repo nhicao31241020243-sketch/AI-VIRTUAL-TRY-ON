@@ -4,3 +4,5 @@ export interface TryOnRequestInput {
   color: string;
   size: string;
 }
+
+export type TryOnProvider = 'gemini' | 'huggingface';

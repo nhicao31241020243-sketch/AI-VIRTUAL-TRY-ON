@@ -5,6 +5,7 @@ import { Client, handle_file } from '@gradio/client';
 import sharp from 'sharp';
 import { createRateLimiter } from '@/lib/rate-limit';
 import { TRYON_CONFIG } from '@/lib/tryon-config';
+import { recordTryOnMetric } from '@/lib/tryon-metrics-server';
 import { products } from '@/lib/products';
 
 export const runtime = 'nodejs';
@@ -299,6 +300,20 @@ export async function POST(request: Request) {
     return errorResponse('Không tìm thấy sản phẩm, màu sắc hoặc kích thước đã chọn.', 400);
   }
 
+  const attemptStartedAt = Date.now();
+  let metricRecorded = false;
+  const recordOutcome = async (outcome: 'success' | 'error') => {
+    if (metricRecorded) return;
+    metricRecorded = true;
+    await recordTryOnMetric({
+      productId,
+      color,
+      provider,
+      outcome,
+      durationMs: Math.min(60_000, Date.now() - attemptStartedAt),
+    });
+  };
+
   try {
     const publicDirectory = resolve(process.cwd(), 'public');
     const garmentPath = resolve(publicDirectory, colorOption.garmentImage.replace(/^\/+/, ''));
@@ -328,7 +343,8 @@ export async function POST(request: Request) {
         `${product.name}, màu ${color}, kích thước ${size}.`,
         validHuggingFaceToken,
       );
-      return NextResponse.json({ image });
+      await recordOutcome('success');
+      return NextResponse.json({ image }, { headers: { 'X-TryOn-Provider': provider } });
     }
 
     if (!geminiApiKey) {
@@ -368,6 +384,7 @@ export async function POST(request: Request) {
     );
 
     if (!geminiResponse.ok) {
+      await recordOutcome('error');
       return errorResponse(
         geminiResponse.status === 429
           ? 'Dịch vụ AI đang bận. Vui lòng thử lại sau ít phút.'
@@ -380,15 +397,22 @@ export async function POST(request: Request) {
     try {
       geminiResult = await geminiResponse.json() as unknown;
     } catch {
+      await recordOutcome('error');
       return errorResponse('Gemini trả về kết quả không hợp lệ. Vui lòng thử lại.', 502);
     }
     const image = getImageFromGemini(geminiResult);
     if (!image || !['image/jpeg', 'image/png', 'image/webp'].includes(image.mimeType)) {
+      await recordOutcome('error');
       return errorResponse('Gemini chưa tạo được ảnh. Vui lòng thử lại với ảnh khác.', 502);
     }
 
-    return NextResponse.json({ image: `data:${image.mimeType};base64,${image.data}` });
+    await recordOutcome('success');
+    return NextResponse.json(
+      { image: `data:${image.mimeType};base64,${image.data}` },
+      { headers: { 'X-TryOn-Provider': provider } },
+    );
   } catch (error) {
+    await recordOutcome('error');
     if (provider === 'huggingface') return getHuggingFaceErrorResponse(error);
     if (error instanceof Error && error.name === 'TimeoutError') {
       return errorResponse('Gemini xử lý quá lâu. Vui lòng thử lại.', 504);

@@ -22,10 +22,15 @@ Nếu chưa có remote: tạo repo trống trên GitHub rồi `git remote add or
 | `TRYON_PROVIDER` | `gemini` hoặc `huggingface` |
 | `GEMINI_API_KEY` | Khóa API từ [Google AI Studio](https://aistudio.google.com/apikey), chỉ cấu hình ở server khi dùng Gemini |
 | `HF_TOKEN` | Token Hugging Face, chỉ cấu hình ở server khi dùng Hugging Face |
+| `SUPABASE_URL` | URL của project Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key, chỉ server-side; không dùng `NEXT_PUBLIC_` |
+| `ADMIN_METRICS_PASSWORD` | Mật khẩu admin dài ít nhất 12 ký tự, chỉ server-side |
 | `TRYON_RATE_LIMIT_ENABLED` | `true` |
 
 Không dùng tiền tố `NEXT_PUBLIC_` cho khóa API. Redeploy sau khi thay đổi biến môi trường.
 Provider Hugging Face hiện kết nối Space [yisol/IDM-VTON](https://huggingface.co/spaces/yisol/IDM-VTON) qua `/tryon`; thời gian và khả năng xử lý phụ thuộc trạng thái Space, hàng chờ và quota GPU.
+
+Chạy migration `supabase/migrations/20261026010000_tryon_feedback_metrics.sql` trong Supabase SQL Editor trước khi dùng API feedback hoặc `/admin/metrics`. Dashboard được bảo vệ bằng mật khẩu server-side; metrics và feedback chỉ lưu metadata, không lưu ảnh.
 
 ## 4) Test preview trên điện thoại
 
