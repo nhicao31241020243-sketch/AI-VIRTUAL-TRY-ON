@@ -63,7 +63,8 @@ export function ResultView({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${product.id}-thu-do-ai.jpg`;
+      const extension = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg';
+      link.download = `${product.id}-thu-do-ai.${extension}`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {

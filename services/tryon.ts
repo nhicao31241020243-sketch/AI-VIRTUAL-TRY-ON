@@ -1,14 +1,4 @@
-import type {
-  TryOnPredictionInput,
-  TryOnPredictionResult,
-} from '@/types/virtual-try-on';
-
-export class TryOnNetworkError extends Error {
-  constructor() {
-    super('Không thể kết nối đến dịch vụ thử đồ. Vui lòng kiểm tra mạng và thử lại.');
-    this.name = 'TryOnNetworkError';
-  }
-}
+import type { TryOnRequestInput } from '@/types/virtual-try-on';
 
 async function readJson(response: Response): Promise<unknown> {
   try {
@@ -28,7 +18,7 @@ async function request(url: string, init: RequestInit): Promise<unknown> {
     response = await fetch(url, init);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
-    throw new TryOnNetworkError();
+    throw new Error('Không thể kết nối đến dịch vụ thử đồ. Vui lòng kiểm tra mạng và thử lại.');
   }
 
   const body = await readJson(response);
@@ -42,38 +32,26 @@ async function request(url: string, init: RequestInit): Promise<unknown> {
 }
 
 export async function startTryOn(
-  input: TryOnPredictionInput,
+  input: TryOnRequestInput,
   signal: AbortSignal,
 ): Promise<string> {
-  const body = await request('/api/tryon', {
+  const formData = new FormData();
+  formData.append('image', input.image);
+  formData.append('productId', input.productId);
+  formData.append('color', input.color);
+  formData.append('size', input.size);
+
+  const responseBody = await request('/api/tryon', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+    body: formData,
     signal,
   });
-  if (!isRecord(body) || typeof body.id !== 'string' || !body.id) {
-    throw new Error('Không nhận được mã lượt thử đồ từ dịch vụ.');
-  }
-  return body.id;
-}
-
-export async function getTryOnStatus(
-  id: string,
-  signal: AbortSignal,
-): Promise<TryOnPredictionResult> {
-  const body = await request(`/api/tryon?id=${encodeURIComponent(id)}`, { signal });
   if (
-    !isRecord(body)
-    || typeof body.status !== 'string'
-    || !['starting', 'processing', 'succeeded', 'failed', 'canceled'].includes(body.status)
-    || (body.output !== null && typeof body.output !== 'string')
-    || (body.error !== null && typeof body.error !== 'string')
+    !isRecord(responseBody)
+    || typeof responseBody.image !== 'string'
+    || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(responseBody.image)
   ) {
-    throw new Error('Không thể đọc trạng thái lượt thử đồ.');
+    throw new Error('Không nhận được ảnh kết quả từ dịch vụ thử đồ.');
   }
-  return {
-    status: body.status as TryOnPredictionResult['status'],
-    output: body.output,
-    error: body.error,
-  };
+  return responseBody.image;
 }

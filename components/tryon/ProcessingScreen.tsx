@@ -27,12 +27,12 @@ export function ProcessingScreen({ status, onCancel }: ProcessingScreenProps) {
       </div>
       <p className="eyebrow mt-8">{status === 'uploading' ? 'Đang chuẩn bị ảnh' : 'Đang xử lý ảnh'}</p>
       <h3 className="mt-3 max-w-xl font-display text-2xl font-bold sm:text-3xl">
-        {status === 'uploading' ? 'Đang tối ưu ảnh của bạn...' : 'AI đang phối đồ, vui lòng chờ trong giây lát...'}
+        {status === 'uploading' ? 'Đang tối ưu ảnh của bạn...' : 'AI đang thử đồ, khoảng 10-30 giây...'}
       </h3>
       <p className="mt-3 max-w-md text-sm leading-6 text-ink/60">
         {status === 'uploading'
           ? 'Ảnh được nén trực tiếp trên thiết bị trước khi gửi đi.'
-          : 'Quá trình tạo ảnh có thể mất đến 90 giây.'}
+          : 'Gemini đang tạo ảnh thử đồ của bạn.'}
       </p>
       <div
         className="mt-7 h-2 w-full max-w-md overflow-hidden rounded-full bg-sand"
@@ -46,7 +46,7 @@ export function ProcessingScreen({ status, onCancel }: ProcessingScreenProps) {
       </div>
       <div className="mt-7 flex max-w-md items-center gap-3 rounded-xl bg-clay/10 px-4 py-3 text-left">
         <LockKeyhole className="shrink-0 text-clay" size={19} />
-        <p className="text-xs leading-5 text-ink/75">Ảnh chỉ được xử lý tạm thời và tự động xóa sau 5 phút.</p>
+        <p className="text-xs leading-5 text-ink/75">Ảnh được gửi an toàn đến Gemini API và không lưu trong cơ sở dữ liệu của ứng dụng.</p>
       </div>
       <button type="button" onClick={onCancel} className="btn-secondary mt-7 py-3">Hủy</button>
     </div>

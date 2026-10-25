@@ -52,10 +52,9 @@ function ProductPage() {
   const rerunTryOn = useCallback((nextColor: string, nextSize: string) => {
     setColor(nextColor);
     setSize(nextSize);
-    const nextOption = product.colors.find((item) => item.name === nextColor);
-    if (!nextOption || !tryOn.state.beforeImageUrl) return;
+    if (!tryOn.state.beforeImageUrl) return;
     setModalOpen(true);
-    void tryOn.start(tryOn.state.beforeImageUrl, product, nextOption.garmentImage, nextColor, nextSize);
+    void tryOn.start(tryOn.state.beforeImageUrl, product, nextColor, nextSize);
   }, [product, tryOn]);
 
   if (
@@ -86,14 +85,13 @@ function ProductPage() {
         <TryOnModal
           open={modalOpen && tryOn.state.status !== 'success'}
           product={product}
-          garmentImage={selectedColor.garmentImage}
           color={color}
           size={size}
           state={tryOn.state}
           onClose={closeModal}
-          onStart={(source, selectedProduct, garmentImage, selectedColorName, selectedSize, nextFitProfile) => {
+          onStart={(source, selectedProduct, selectedColorName, selectedSize, nextFitProfile) => {
             setFitProfile(nextFitProfile);
-            void tryOn.start(source, selectedProduct, garmentImage, selectedColorName, selectedSize);
+            void tryOn.start(source, selectedProduct, selectedColorName, selectedSize);
           }}
           onRetry={() => tryOn.retry()}
           onCancelProcessing={() => tryOn.reset()}
@@ -198,14 +196,13 @@ function ProductPage() {
       <TryOnModal
         open={modalOpen}
         product={product}
-        garmentImage={selectedColor.garmentImage}
         color={color}
         size={size}
         state={tryOn.state}
         onClose={closeModal}
-        onStart={(source, selectedProduct, garmentImage, selectedColorName, selectedSize, nextFitProfile) => {
+        onStart={(source, selectedProduct, selectedColorName, selectedSize, nextFitProfile) => {
           setFitProfile(nextFitProfile);
-          void tryOn.start(source, selectedProduct, garmentImage, selectedColorName, selectedSize);
+          void tryOn.start(source, selectedProduct, selectedColorName, selectedSize);
         }}
         onRetry={() => tryOn.retry()}
         onCancelProcessing={() => tryOn.reset()}

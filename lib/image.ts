@@ -75,11 +75,11 @@ async function convertImageUrlToJpeg(url: string): Promise<File> {
   }
 }
 
-export async function imageToDataUrl(source: File | string): Promise<string> {
+export async function prepareImage(source: File | string): Promise<{ file: File; dataUrl: string }> {
   const file = await compressImage(
     typeof source === 'string'
       ? await convertImageUrlToJpeg(source)
       : source,
   );
-  return fileToDataUrl(file);
+  return { file, dataUrl: await fileToDataUrl(file) };
 }

@@ -18,7 +18,6 @@ const models = [
 interface TryOnModalProps {
   open: boolean;
   product: Product;
-  garmentImage: string;
   color: string;
   size: string;
   state: TryOnState;
@@ -26,7 +25,6 @@ interface TryOnModalProps {
   onStart: (
     source: File | string,
     product: Product,
-    garmentImage: string,
     color: string,
     size: string,
     fitProfile: { heightCm?: number; weightKg?: number },
@@ -38,7 +36,6 @@ interface TryOnModalProps {
 export function TryOnModal({
   open,
   product,
-  garmentImage,
   color,
   size,
   state,
@@ -133,7 +130,7 @@ export function TryOnModal({
       heightCm: Number.isFinite(parsedHeight) && parsedHeight > 0 ? parsedHeight : undefined,
       weightKg: Number.isFinite(parsedWeight) && parsedWeight > 0 ? parsedWeight : undefined,
     };
-    if (selectedSource) onStart(selectedSource, product, garmentImage, color, size, fitProfile);
+    if (selectedSource) onStart(selectedSource, product, color, size, fitProfile);
   };
   const scheduleSelectionCleanup = () => {
     if (selectionCleanupTimer.current !== null) window.clearTimeout(selectionCleanupTimer.current);
@@ -214,7 +211,7 @@ export function TryOnModal({
                 )}
               </button>
               <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-ink/50">
-                <Info size={15} className="mt-0.5 shrink-0" /> JPG, PNG hoặc WebP, tối đa 20MB. Ảnh sẽ được nén còn khoảng 1MB trước khi gửi.
+                <Info size={15} className="mt-0.5 shrink-0" /> JPG, PNG hoặc WebP, tối đa 20MB. Ảnh sẽ được nén còn tối đa 1024px trước khi gửi.
               </p>
             </div>
 
@@ -270,7 +267,7 @@ export function TryOnModal({
                   />
                 </label>
               </div>
-              <p className="mb-4 text-xs leading-5 text-ink/55">Ảnh chỉ được xử lý tạm thời và tự động xóa sau 5 phút.</p>
+              <p className="mb-4 text-xs leading-5 text-ink/55">Ảnh được gửi đến Gemini API để xử lý; ứng dụng không lưu ảnh vào cơ sở dữ liệu.</p>
               <label className="mb-4 flex items-start gap-2 text-xs leading-5 text-ink/65">
                 <input
                   type="checkbox"
@@ -279,7 +276,7 @@ export function TryOnModal({
                   className="mt-0.5 h-4 w-4 rounded border-ink/20 accent-ink"
                   aria-label="Tôi đồng ý chính sách quyền riêng tư"
                 />
-                Tôi đồng ý cho gửi ảnh đến dịch vụ AI để xử lý tạm thời và tự động xóa sau 5 phút.
+                Tôi đồng ý gửi ảnh đến Gemini API để tạo kết quả thử đồ.
               </label>
               {fileError && <p role="alert" className="mb-3 text-sm text-red-700">{fileError}</p>}
               {state.status === 'error' && (

@@ -1,12 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { imageToDataUrl } from '@/lib/image';
-import { getTryOnStatus, startTryOn, TryOnNetworkError } from '@/services/tryon';
+import { prepareImage } from '@/lib/image';
+import { startTryOn } from '@/services/tryon';
 import { recordMetric } from '@/lib/metrics';
 import { TRYON_CONFIG } from '@/lib/tryon-config';
 import type { Product } from '@/types/product';
-import type { TryOnPredictionInput } from '@/types/virtual-try-on';
 
 export type TryOnStatus = 'idle' | 'uploading' | 'processing' | 'success' | 'error';
 
@@ -25,34 +24,14 @@ const INITIAL_STATE: TryOnState = {
   error: null,
   inferenceTimeMs: null,
 };
-const POLL_INTERVAL_MS = 1500;
 const TIMEOUT_MS = TRYON_CONFIG.timeoutMs;
 const CLEANUP_AFTER_MS = 5 * 60_000;
 
 interface LastTryOnRequest {
   source: File | string;
   product: Product;
-  garmentImage: string;
   color: string;
   size: string;
-}
-
-function wait(milliseconds: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException('Đã hủy lượt thử đồ.', 'AbortError'));
-      return;
-    }
-    const timeout = window.setTimeout(() => {
-      signal.removeEventListener('abort', handleAbort);
-      resolve();
-    }, milliseconds);
-    const handleAbort = () => {
-      window.clearTimeout(timeout);
-      reject(new DOMException('Đã hủy lượt thử đồ.', 'AbortError'));
-    };
-    signal.addEventListener('abort', handleAbort, { once: true });
-  });
 }
 
 function isAbortError(error: unknown): boolean {
@@ -120,13 +99,12 @@ export function useTryOn() {
   const start = useCallback(async (
     source: File | string,
     product: Product,
-    garmentImage: string,
     color: string,
     size: string,
   ) => {
     if (activeController.current) return;
 
-    lastRequest.current = { source, product, garmentImage, color, size };
+    lastRequest.current = { source, product, color, size };
     const controller = new AbortController();
     activeController.current = controller;
     clearCleanupTimer();
@@ -141,72 +119,33 @@ export function useTryOn() {
     }, TIMEOUT_MS);
     setState({ ...INITIAL_STATE, status: 'uploading' });
 
-    const startedAt = Date.now();
     let inferenceStartedAt: number | null = null;
     try {
-      const [humanImg, garmentImg] = await withAbort(Promise.all([
-        imageToDataUrl(source),
-        imageToDataUrl(garmentImage),
-      ]), controller.signal);
+      const preparedImage = await withAbort(prepareImage(source), controller.signal);
       if (controller.signal.aborted) return;
 
       inferenceStartedAt = Date.now();
-      setState((current) => ({ ...current, status: 'processing', beforeImageUrl: humanImg }));
-      const input: TryOnPredictionInput = {
-        humanImg,
-        garmentImg,
-        garmentDesc: `${product.name}, màu ${color}, kích thước ${size}. ${product.description}`,
-        category: product.category,
-      };
-      const deadline = startedAt + TIMEOUT_MS;
-      let predictionId: string | null = null;
-      let networkRetries = 0;
+      setState((current) => ({ ...current, status: 'processing', beforeImageUrl: preparedImage.dataUrl }));
+      const resultImageUrl = await startTryOn({
+        image: preparedImage.file,
+        productId: product.id,
+        color,
+        size,
+      }, controller.signal);
+      if (controller.signal.aborted) return;
 
-      while (!predictionId) {
-        try {
-          predictionId = await startTryOn(input, controller.signal);
-        } catch (error) {
-          if (!(error instanceof TryOnNetworkError) || networkRetries >= 2) throw error;
-          networkRetries += 1;
-          await wait(400 * networkRetries, controller.signal);
-        }
+      const inferenceTimeMs = Date.now() - inferenceStartedAt;
+      setState({
+        status: 'success',
+        beforeImageUrl: preparedImage.dataUrl,
+        resultImageUrl,
+        error: null,
+        inferenceTimeMs,
+      });
+      if (process.env.NODE_ENV === 'development') {
+        console.info(`[TryOn] inferenceTimeMs=${inferenceTimeMs}`);
       }
-
-      networkRetries = 0;
-      while (Date.now() < deadline) {
-        await wait(POLL_INTERVAL_MS, controller.signal);
-        let result;
-        try {
-          result = await getTryOnStatus(predictionId, controller.signal);
-          networkRetries = 0;
-        } catch (error) {
-          if (!(error instanceof TryOnNetworkError) || networkRetries >= 2) throw error;
-          networkRetries += 1;
-          await wait(400 * networkRetries, controller.signal);
-          continue;
-        }
-
-        if (result.status === 'failed' || result.status === 'canceled') {
-          throw new Error(result.error ?? 'AI chưa thể tạo kết quả. Vui lòng thử lại.');
-        }
-        if (result.status === 'succeeded') {
-          if (!result.output) throw new Error('AI hoàn tất nhưng không trả về ảnh kết quả.');
-          const inferenceTimeMs = Date.now() - inferenceStartedAt;
-          setState({
-            status: 'success',
-            beforeImageUrl: humanImg,
-            resultImageUrl: result.output,
-            error: null,
-            inferenceTimeMs,
-          });
-          if (process.env.NODE_ENV === 'development') {
-            console.info(`[TryOn] inferenceTimeMs=${inferenceTimeMs}`);
-          }
-          recordMetric({ type: 'success', at: Date.now(), inferenceTimeMs });
-          return;
-        }
-      }
-      throw new Error('Lượt thử đồ đã quá thời gian chờ 90 giây. Vui lòng thử lại.');
+      recordMetric({ type: 'success', at: Date.now(), inferenceTimeMs });
     } catch (error) {
       const timedOut = isTimeoutReason(controller.signal.reason);
       const inferenceTimeMs = inferenceStartedAt === null
@@ -219,7 +158,7 @@ export function useTryOn() {
         setState((current) => ({
           ...current,
           status: 'error',
-          error: 'Lượt thử đồ đã quá thời gian chờ 90 giây. Vui lòng thử lại.',
+          error: 'Lượt thử đồ đã quá thời gian chờ. Vui lòng thử lại.',
         }));
         recordMetric({
           type: 'error',
@@ -253,7 +192,6 @@ export function useTryOn() {
       void start(
         previousRequest.source,
         previousRequest.product,
-        previousRequest.garmentImage,
         previousRequest.color,
         previousRequest.size,
       );

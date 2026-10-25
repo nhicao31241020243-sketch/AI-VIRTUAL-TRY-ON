@@ -1,27 +1,24 @@
+import { readFile } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import { NextResponse } from 'next/server';
-import Replicate from 'replicate';
-import type { ProductCategory } from '@/types/product';
+import { Client, handle_file } from '@gradio/client';
+import sharp from 'sharp';
 import { createRateLimiter } from '@/lib/rate-limit';
 import { TRYON_CONFIG } from '@/lib/tryon-config';
+import { products } from '@/lib/products';
 
 export const runtime = 'nodejs';
-// Hobby giới hạn tối đa 60s (có thể thấp hơn tùy cấu hình); POST chỉ tạo prediction nên rất nhanh.
 export const maxDuration = 60;
 
 const DATA_IMAGE_PATTERN = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
-const CATEGORIES: ProductCategory[] = ['upper_body', 'lower_body', 'dresses'];
-const rateLimiter = createRateLimiter(TRYON_CONFIG.rateLimit);
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true'
-  || !process.env.REPLICATE_API_TOKEN?.trim();
-const DEMO_DELAY_MS = 3000;
 const RATE_LIMIT_ENABLED = process.env.TRYON_RATE_LIMIT_ENABLED !== 'false';
-
-interface TryOnInput {
-  humanImg: string;
-  garmentImg: string;
-  garmentDesc: string;
-  category: ProductCategory;
-}
+const rateLimiter = createRateLimiter(TRYON_CONFIG.rateLimit);
+const HUGGINGFACE_SPACE = 'yisol/IDM-VTON';
+const HUGGINGFACE_SPACE_URL = 'https://yisol-idm-vton.hf.space';
+const HUGGINGFACE_TIMEOUT_MS = 48_000;
+const MAX_PROVIDER_IMAGE_BYTES = 20 * 1024 * 1024;
+const GEMINI_MODEL = 'gemini-3.1-flash-image';
+const GEMINI_PROMPT = 'Mặc chiếc áo trong ảnh thứ hai lên người trong ảnh thứ nhất. Giữ nguyên khuôn mặt, tư thế, dáng người, nền và ánh sáng. Áo vừa vặn tự nhiên, đúng màu và chi tiết.';
 
 class RequestTooLargeError extends Error {}
 
@@ -29,8 +26,16 @@ function errorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
-async function readLimitedBody(request: Request): Promise<string> {
-  if (!request.body) return '';
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isHuggingFaceToken(value: string): value is `hf_${string}` {
+  return /^hf_[A-Za-z0-9]+$/.test(value);
+}
+
+async function readLimitedBody(request: Request): Promise<Buffer> {
+  if (!request.body) return Buffer.alloc(0);
 
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -45,36 +50,24 @@ async function readLimitedBody(request: Request): Promise<string> {
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function isProductCategory(value: unknown): value is ProductCategory {
-  return CATEGORIES.some((category) => category === value);
-}
-
-function isValidDataImage(value: string): boolean {
-  const match = DATA_IMAGE_PATTERN.exec(value);
-  if (!match) return false;
-
-  const bytes = Buffer.from(match[2], 'base64');
-  if (
-    bytes.byteLength === 0
-    || bytes.byteLength > TRYON_CONFIG.maxImageBytes
-    || bytes.toString('base64') !== match[2]
-  ) return false;
-  if (match[2].length % 4 !== 0) return false;
-
-  if (match[1] === 'jpeg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  if (match[1] === 'png') {
+function hasValidImageSignature(type: string, bytes: Buffer): boolean {
+  if (type === 'image/jpeg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (type === 'image/png') {
     return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   }
-  return bytes.length >= 12
+  return type === 'image/webp'
+    && bytes.length >= 12
     && bytes.toString('ascii', 0, 4) === 'RIFF'
     && bytes.toString('ascii', 8, 12) === 'WEBP';
+}
+
+function toArrayBuffer(bytes: Buffer): ArrayBuffer {
+  const arrayBuffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(arrayBuffer).set(bytes);
+  return arrayBuffer;
 }
 
 function getClientIp(request: Request): string {
@@ -85,31 +78,142 @@ function getClientIp(request: Request): string {
   return ip.slice(0, 100);
 }
 
-function isTryOnInput(value: unknown): value is TryOnInput {
-  if (!isRecord(value)) return false;
-  const { humanImg, garmentImg, garmentDesc, category } = value;
-  if (
-    typeof humanImg !== 'string'
-    || typeof garmentImg !== 'string'
-    || typeof garmentDesc !== 'string'
-    || garmentDesc.length < 1
-    || garmentDesc.length > 250
-    || !isProductCategory(category)
-  ) return false;
-
-  return isValidDataImage(humanImg) && isValidDataImage(garmentImg);
+function getImageFromGemini(value: unknown): { mimeType: string; data: string } | null {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return null;
+  const candidate = value.candidates.find(isRecord);
+  if (!candidate || !isRecord(candidate.content) || !Array.isArray(candidate.content.parts)) return null;
+  const imagePart = candidate.content.parts.find((part) => (
+    isRecord(part)
+    && isRecord(part.inlineData)
+    && typeof part.inlineData.mimeType === 'string'
+    && typeof part.inlineData.data === 'string'
+  ));
+  if (!isRecord(imagePart) || !isRecord(imagePart.inlineData)) return null;
+  return {
+    mimeType: imagePart.inlineData.mimeType as string,
+    data: imagePart.inlineData.data as string,
+  };
 }
 
-function getReplicate(): Replicate | null {
-  const token = process.env.REPLICATE_API_TOKEN;
-  return token?.trim() ? new Replicate({ auth: token.trim() }) : null;
+function getHuggingFaceImageUrl(value: unknown): string | null {
+  if (typeof value === 'string') {
+    if (
+      value.length <= Math.ceil(MAX_PROVIDER_IMAGE_BYTES * 4 / 3) + 40
+      && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
+    ) return value;
+    try {
+      const url = new URL(value, HUGGINGFACE_SPACE_URL);
+      if (url.hostname !== 'yisol-idm-vton.hf.space') return null;
+      if (value.startsWith('/file=') || value.startsWith('/gradio_api/file=')) return url.toString();
+      if (/^https?:\/\//i.test(value)) return url.toString();
+      const encodedPath = value.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+      return `${HUGGINGFACE_SPACE_URL}/file=${encodedPath}`;
+    } catch {
+      return null;
+    }
+  }
+
+  if (!isRecord(value)) return null;
+  if (typeof value.url === 'string') return getHuggingFaceImageUrl(value.url);
+  if (typeof value.path === 'string') return getHuggingFaceImageUrl(value.path);
+  if (typeof value.data === 'string') {
+    if (
+      value.data.length <= Math.ceil(MAX_PROVIDER_IMAGE_BYTES * 4 / 3) + 40
+      && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value.data)
+    ) {
+      return value.data;
+    }
+    if (
+      typeof value.mime_type === 'string'
+      && ['image/jpeg', 'image/png', 'image/webp'].includes(value.mime_type)
+      && /^[A-Za-z0-9+/]+={0,2}$/.test(value.data)
+      && value.data.length <= Math.ceil(MAX_PROVIDER_IMAGE_BYTES * 4 / 3)
+    ) {
+      return `data:${value.mime_type};base64,${value.data}`;
+    }
+  }
+  return null;
 }
 
-function getModelConfig(): { model: string; version: string | null } | null {
-  const configured = process.env.REPLICATE_TRYON_MODEL?.trim() || TRYON_CONFIG.defaultModel;
-  const match = /^([a-z\d-]+\/[a-z\d._-]+)(?::([a-f\d]{64}))?$/i.exec(configured);
-  if (!match) return null;
-  return { model: match[1], version: match[2] ?? null };
+async function fetchHuggingFaceResultImage(imageReference: unknown): Promise<string> {
+  const imageUrl = getHuggingFaceImageUrl(imageReference);
+  if (!imageUrl) throw new Error('Hugging Face không trả về ảnh kết quả hợp lệ.');
+  if (imageUrl.startsWith('data:')) return imageUrl;
+
+  const response = await fetch(imageUrl, { signal: AbortSignal.timeout(8_000) });
+  if (!response.ok) throw new Error('Không thể tải ảnh kết quả từ Hugging Face.');
+  const outputBytes = Buffer.from(await response.arrayBuffer());
+  if (outputBytes.length === 0 || outputBytes.length > MAX_PROVIDER_IMAGE_BYTES) {
+    throw new Error('Ảnh kết quả từ Hugging Face không hợp lệ hoặc quá lớn.');
+  }
+  const outputImage = await sharp(outputBytes).jpeg({ quality: 90 }).toBuffer();
+  return `data:image/jpeg;base64,${outputImage.toString('base64')}`;
+}
+
+async function runHuggingFaceTryOn(
+  personBytes: Buffer,
+  personMimeType: string,
+  garmentBytes: Buffer,
+  garmentDescription: string,
+  token: `hf_${string}`,
+): Promise<string> {
+  let cancelJob: (() => Promise<void>) | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const deadline = Date.now() + HUGGINGFACE_TIMEOUT_MS;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      if (cancelJob) void cancelJob().catch(() => undefined);
+      reject(new Error('HUGGINGFACE_TIMEOUT'));
+    }, HUGGINGFACE_TIMEOUT_MS);
+  });
+
+  const requestPromise = (async () => {
+    const client = await Client.connect(HUGGINGFACE_SPACE, { token });
+    if (Date.now() >= deadline) throw new Error('HUGGINGFACE_TIMEOUT');
+
+    const humanImage = handle_file(new Blob([toArrayBuffer(personBytes)], { type: personMimeType }));
+    const garmentImage = handle_file(new Blob([toArrayBuffer(garmentBytes)], { type: 'image/png' }));
+    const job = client.submit('/tryon', [
+      { background: humanImage, layers: [], composite: null },
+      garmentImage,
+      garmentDescription,
+      true,
+      false,
+      30,
+      Math.floor(Math.random() * 1_000_000),
+    ]);
+    cancelJob = () => job.cancel();
+
+    for await (const event of job) {
+      if (event.type === 'data' && Array.isArray(event.data)) {
+        return fetchHuggingFaceResultImage(event.data[0]);
+      }
+    }
+    throw new Error('Hugging Face kết thúc mà không trả về ảnh.');
+  })();
+
+  try {
+    return await Promise.race([requestPromise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+  }
+}
+
+function getHuggingFaceErrorResponse(error: unknown) {
+  const details = error instanceof Error ? error.message.toLowerCase() : '';
+  if (details.includes('huggingface_timeout')) {
+    return errorResponse('Hugging Face đang xử lý hoặc xếp hàng quá lâu. Vui lòng thử lại sau.', 504);
+  }
+  if (/quota|daily limit|credits|zero.?gpu|gpu usage|too many requests|429/.test(details)) {
+    return errorResponse('Hugging Face đã hết quota GPU hoặc đang giới hạn lượt dùng. Vui lòng thử lại sau.', 429);
+  }
+  if (/queue|queued|queue_full|capacity|busy/.test(details)) {
+    return errorResponse('GPU Hugging Face đang bận và có nhiều lượt chờ. Vui lòng thử lại sau ít phút.', 503);
+  }
+  if (/unauthorized|forbidden|invalid token|authentication|401|403/.test(details)) {
+    return errorResponse('Không thể xác thực Hugging Face. Vui lòng kiểm tra cấu hình HF_TOKEN.', 502);
+  }
+  return errorResponse('Space thử đồ Hugging Face đang gặp sự cố. Vui lòng thử lại sau.', 502);
 }
 
 export async function POST(request: Request) {
@@ -123,13 +227,26 @@ export async function POST(request: Request) {
     }
   }
 
-  const replicate = getReplicate();
-  if (!replicate && !DEMO_MODE) {
-    return errorResponse('Dịch vụ thử đồ chưa được cấu hình. Vui lòng thử lại sau.', 500);
+  const provider = process.env.TRYON_PROVIDER?.trim().toLowerCase() || 'gemini';
+  if (provider !== 'gemini' && provider !== 'huggingface') {
+    return errorResponse('TRYON_PROVIDER không hợp lệ. Hãy chọn gemini hoặc huggingface.', 500);
   }
 
-  if (request.headers.get('content-type')?.split(';')[0] !== 'application/json') {
-    return errorResponse('Yêu cầu cần được gửi ở định dạng JSON.', 415);
+  const geminiApiKey = process.env.GEMINI_API_KEY?.trim();
+  const huggingFaceToken = process.env.HF_TOKEN?.trim();
+  const validHuggingFaceToken = huggingFaceToken && isHuggingFaceToken(huggingFaceToken)
+    ? huggingFaceToken
+    : null;
+  if (provider === 'gemini' && !geminiApiKey) {
+    return errorResponse('Dịch vụ thử đồ chưa được cấu hình GEMINI_API_KEY. Vui lòng thử lại sau.', 500);
+  }
+  if (provider === 'huggingface' && !validHuggingFaceToken) {
+    return errorResponse('Dịch vụ thử đồ chưa được cấu hình HF_TOKEN hợp lệ. Vui lòng thử lại sau.', 500);
+  }
+
+  const contentType = request.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().startsWith('multipart/form-data;')) {
+    return errorResponse('Yêu cầu cần được gửi ở định dạng ảnh hợp lệ.', 415);
   }
 
   const contentLength = Number(request.headers.get('content-length') ?? 0);
@@ -137,10 +254,15 @@ export async function POST(request: Request) {
     return errorResponse('Ảnh tải lên vượt quá dung lượng cho phép.', 413);
   }
 
-  let body: unknown;
+  let formData: FormData;
   try {
     const rawBody = await readLimitedBody(request);
-    body = JSON.parse(rawBody) as unknown;
+    const formRequest = new Request(request.url, {
+      method: 'POST',
+      headers: { 'content-type': contentType },
+      body: new Uint8Array(rawBody),
+    });
+    formData = await formRequest.formData();
   } catch (error) {
     if (error instanceof RequestTooLargeError) {
       return errorResponse('Ảnh tải lên vượt quá dung lượng cho phép.', 413);
@@ -148,83 +270,129 @@ export async function POST(request: Request) {
     return errorResponse('Dữ liệu gửi lên không hợp lệ.', 400);
   }
 
-  if (!isTryOnInput(body)) {
-    return errorResponse('Vui lòng cung cấp ảnh hợp lệ (JPG, PNG hoặc WebP) và thông tin sản phẩm.', 400);
+  const personFile = formData.get('image');
+  const productId = formData.get('productId');
+  const color = formData.get('color');
+  const size = formData.get('size');
+  if (
+    !(personFile instanceof File)
+    || typeof productId !== 'string'
+    || typeof color !== 'string'
+    || typeof size !== 'string'
+    || !['image/jpeg', 'image/png', 'image/webp'].includes(personFile.type)
+  ) {
+    return errorResponse('Vui lòng cung cấp ảnh JPG, PNG hoặc WebP cùng thông tin sản phẩm.', 400);
   }
 
-  if (DEMO_MODE) {
-    const id = `demo-${Date.now()}-${crypto.randomUUID()}`;
-    return NextResponse.json({ id });
+  if (personFile.size === 0 || personFile.size > TRYON_CONFIG.maxImageBytes) {
+    return errorResponse('Ảnh tải lên phải có dung lượng tối đa 4MB.', 413);
   }
-  if (!replicate) {
-    return errorResponse('Dịch vụ thử đồ chưa được cấu hình. Vui lòng thử lại sau.', 500);
+
+  const personBytes = Buffer.from(await personFile.arrayBuffer());
+  if (!hasValidImageSignature(personFile.type, personBytes)) {
+    return errorResponse('Định dạng ảnh không hợp lệ. Vui lòng chọn ảnh JPG, PNG hoặc WebP.', 400);
+  }
+
+  const product = products.find((item) => item.id === productId);
+  const colorOption = product?.colors.find((item) => item.name === color);
+  if (!product || !colorOption || !product.sizes.includes(size)) {
+    return errorResponse('Không tìm thấy sản phẩm, màu sắc hoặc kích thước đã chọn.', 400);
   }
 
   try {
-    const modelConfig = getModelConfig();
-    if (!modelConfig) {
-      return errorResponse('Cấu hình REPLICATE_TRYON_MODEL không hợp lệ. Hãy dùng dạng chu-so-huu/ten-model hoặc kèm version SHA.', 500);
+    const publicDirectory = resolve(process.cwd(), 'public');
+    const garmentPath = resolve(publicDirectory, colorOption.garmentImage.replace(/^\/+/, ''));
+    if (!garmentPath.startsWith(`${publicDirectory}${sep}`)) {
+      return errorResponse('Không thể tải ảnh sản phẩm đã chọn.', 500);
     }
-    const input = {
-      [TRYON_CONFIG.inputFields.personImage]: body.humanImg,
-      [TRYON_CONFIG.inputFields.garmentImage]: body.garmentImg,
-      [TRYON_CONFIG.inputFields.garmentDescription]: body.garmentDesc,
-      [TRYON_CONFIG.inputFields.category]: body.category,
-    };
-    const signal = AbortSignal.timeout(TRYON_CONFIG.timeoutMs);
-    const prediction = modelConfig.version
-      ? await replicate.predictions.create({ version: modelConfig.version, input, signal })
-      : await replicate.predictions.create({ model: modelConfig.model, input, signal });
-    return NextResponse.json({ id: prediction.id });
-  } catch {
-    return errorResponse('Không thể bắt đầu thử đồ lúc này. Vui lòng thử lại sau.', 502);
-  }
-}
-
-export async function GET(request: Request) {
-  const replicate = getReplicate();
-  if (!replicate && !DEMO_MODE) {
-    return errorResponse('Dịch vụ thử đồ chưa được cấu hình. Vui lòng thử lại sau.', 500);
-  }
-
-  const id = new URL(request.url).searchParams.get('id');
-  if (!id || !/^[a-z\d-]{1,100}$/i.test(id)) {
-    return errorResponse('Mã lượt thử đồ không hợp lệ.', 400);
-  }
-
-  if (DEMO_MODE && id.startsWith('demo-')) {
-    const demoId = /^demo-(\d{13})-[\da-f-]{36}$/i.exec(id);
-    if (!demoId) return errorResponse('Không tìm thấy phiên demo thử đồ.', 404);
-    const startedAt = Number(demoId[1]);
-    const done = Date.now() - startedAt >= DEMO_DELAY_MS;
-    if (done) {
-      return NextResponse.json({
-        status: 'succeeded',
-        output: '/models/demo-result.svg',
-        error: null,
+    const garmentPipeline = sharp(await readFile(garmentPath));
+    const garmentMetadata = await garmentPipeline.metadata();
+    if (garmentMetadata.format === 'svg' && garmentMetadata.width && garmentMetadata.height > 0) {
+      garmentPipeline.extract({
+        left: 0,
+        top: 0,
+        width: garmentMetadata.width,
+        height: Math.floor(garmentMetadata.height * 0.82),
       });
     }
-    return NextResponse.json({ status: 'processing', output: null, error: null });
-  }
-  if (!replicate) {
-    return errorResponse('Dịch vụ thử đồ chưa được cấu hình. Vui lòng thử lại sau.', 500);
-  }
+    const garmentBytes = await garmentPipeline.png().toBuffer();
 
-  try {
-    const prediction = await replicate.predictions.get(id, { signal: AbortSignal.timeout(TRYON_CONFIG.timeoutMs) });
-    const rawOutput: unknown = prediction.output;
-    const output = typeof rawOutput === 'string'
-      ? rawOutput
-      : Array.isArray(rawOutput) && typeof rawOutput[0] === 'string'
-        ? rawOutput[0]
-        : null;
-    const status = prediction.status;
-    const error = status === 'failed' || status === 'canceled'
-      ? 'AI chưa thể tạo kết quả. Vui lòng thử lại với ảnh khác.'
-      : null;
+    if (provider === 'huggingface') {
+      if (!validHuggingFaceToken) {
+        return errorResponse('Dịch vụ thử đồ chưa được cấu hình HF_TOKEN hợp lệ. Vui lòng thử lại sau.', 500);
+      }
+      const image = await runHuggingFaceTryOn(
+        personBytes,
+        personFile.type,
+        garmentBytes,
+        `${product.name}, màu ${color}, kích thước ${size}.`,
+        validHuggingFaceToken,
+      );
+      return NextResponse.json({ image });
+    }
 
-    return NextResponse.json({ status, output, error });
-  } catch {
-    return errorResponse('Không thể kiểm tra tiến trình thử đồ. Vui lòng thử lại.', 502);
+    if (!geminiApiKey) {
+      return errorResponse('Dịch vụ thử đồ chưa được cấu hình GEMINI_API_KEY. Vui lòng thử lại sau.', 500);
+    }
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': geminiApiKey,
+        },
+        body: JSON.stringify({
+          contents: [{
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: personFile.type,
+                  data: personBytes.toString('base64'),
+                },
+              },
+              {
+                inlineData: {
+                  mimeType: 'image/png',
+                  data: garmentBytes.toString('base64'),
+                },
+              },
+              { text: GEMINI_PROMPT },
+            ],
+          }],
+          generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+        }),
+        signal: AbortSignal.timeout(55_000),
+      },
+    );
+
+    if (!geminiResponse.ok) {
+      return errorResponse(
+        geminiResponse.status === 429
+          ? 'Dịch vụ AI đang bận. Vui lòng thử lại sau ít phút.'
+          : 'Gemini chưa thể tạo ảnh lúc này. Vui lòng thử lại sau.',
+        geminiResponse.status === 429 ? 429 : 502,
+      );
+    }
+
+    let geminiResult: unknown;
+    try {
+      geminiResult = await geminiResponse.json() as unknown;
+    } catch {
+      return errorResponse('Gemini trả về kết quả không hợp lệ. Vui lòng thử lại.', 502);
+    }
+    const image = getImageFromGemini(geminiResult);
+    if (!image || !['image/jpeg', 'image/png', 'image/webp'].includes(image.mimeType)) {
+      return errorResponse('Gemini chưa tạo được ảnh. Vui lòng thử lại với ảnh khác.', 502);
+    }
+
+    return NextResponse.json({ image: `data:${image.mimeType};base64,${image.data}` });
+  } catch (error) {
+    if (provider === 'huggingface') return getHuggingFaceErrorResponse(error);
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      return errorResponse('Gemini xử lý quá lâu. Vui lòng thử lại.', 504);
+    }
+    return errorResponse('Không thể hoàn tất lượt thử đồ lúc này. Vui lòng thử lại sau.', 502);
   }
 }
