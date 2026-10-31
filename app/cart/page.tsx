@@ -14,7 +14,7 @@ export default function CartPage() {
           <h1 className="mt-2 font-display text-3xl font-bold sm:text-4xl">Sản phẩm đã chọn</h1>
         </div>
         {items.length > 0 && (
-          <button type="button" onClick={clearCart} className="btn-secondary py-3">Xóa toàn bộ</button>
+          <button type="button" data-analytics="cart-remove" data-analytics-feature="cart" onClick={clearCart} className="btn-secondary py-3">Xóa toàn bộ</button>
         )}
       </div>
 
@@ -36,10 +36,10 @@ export default function CartPage() {
                     <p className="mt-1 text-sm font-semibold">{item.price.toLocaleString('vi-VN')}đ</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => updateQuantity(item.productId, item.color, item.size, item.quantity - 1)} className="rounded-lg border border-ink/15 p-2" aria-label="Giảm số lượng"><Minus size={16} /></button>
+                    <button type="button" data-analytics="cart-quantity" data-analytics-feature="cart" onClick={() => updateQuantity(item.productId, item.color, item.size, item.quantity - 1)} className="rounded-lg border border-ink/15 p-2" aria-label="Giảm số lượng"><Minus size={16} /></button>
                     <span className="w-8 text-center font-semibold">{item.quantity}</span>
-                    <button type="button" onClick={() => updateQuantity(item.productId, item.color, item.size, item.quantity + 1)} className="rounded-lg border border-ink/15 p-2" aria-label="Tăng số lượng"><Plus size={16} /></button>
-                    <button type="button" onClick={() => removeItem(item.productId, item.color, item.size)} className="rounded-lg border border-ink/15 p-2 text-clay" aria-label="Xóa sản phẩm"><Trash2 size={16} /></button>
+                    <button type="button" data-analytics="cart-quantity" data-analytics-feature="cart" onClick={() => updateQuantity(item.productId, item.color, item.size, item.quantity + 1)} className="rounded-lg border border-ink/15 p-2" aria-label="Tăng số lượng"><Plus size={16} /></button>
+                    <button type="button" data-analytics="cart-remove" data-analytics-feature="cart" onClick={() => removeItem(item.productId, item.color, item.size)} className="rounded-lg border border-ink/15 p-2 text-clay" aria-label="Xóa sản phẩm"><Trash2 size={16} /></button>
                   </div>
                 </div>
               </article>
@@ -48,7 +48,7 @@ export default function CartPage() {
           <aside className="h-fit rounded-2xl border border-ink/10 bg-white p-5 shadow-soft sm:p-6">
             <p className="text-sm text-ink/55">Tạm tính</p>
             <p className="mt-2 font-display text-3xl font-bold">{totalPrice.toLocaleString('vi-VN')}đ</p>
-            <button type="button" className="btn-primary mt-5 w-full py-4">Tiến hành thanh toán</button>
+            <button type="button" data-analytics="checkout-intent" data-analytics-feature="cart" className="btn-primary mt-5 w-full py-4">Tiến hành thanh toán</button>
             <p className="mt-3 text-xs text-ink/55">Giỏ hàng hiện đang lưu cục bộ trong trình duyệt (localStorage).</p>
           </aside>
         </div>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { prepareImage } from '@/lib/image';
 import { startTryOn } from '@/services/tryon';
 import { recordMetric } from '@/lib/metrics';
+import { track } from '@/lib/analytics-client';
 import { TRYON_CONFIG } from '@/lib/tryon-config';
 import type { Product } from '@/types/product';
 import type { TryOnProvider } from '@/types/virtual-try-on';
@@ -107,6 +108,8 @@ export function useTryOn() {
   ) => {
     if (activeController.current) return;
 
+    track('conversion', 'tryon', 'tryon-start');
+
     lastRequest.current = { source, product, color, size };
     const controller = new AbortController();
     activeController.current = controller;
@@ -150,6 +153,7 @@ export function useTryOn() {
         console.info(`[TryOn] inferenceTimeMs=${inferenceTimeMs}`);
       }
       recordMetric({ type: 'success', at: Date.now(), inferenceTimeMs });
+      track('conversion', 'tryon', 'tryon-success');
     } catch (error) {
       const timedOut = isTimeoutReason(controller.signal.reason);
       const inferenceTimeMs = inferenceStartedAt === null

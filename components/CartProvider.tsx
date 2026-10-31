@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Product } from '@/types/product';
+import { track } from '@/lib/analytics-client';
 
 export interface CartItem {
   productId: string;
@@ -73,6 +74,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [hydrated, items]);
 
   const addItem = useCallback((product: Product, color: string, size: string) => {
+    track('conversion', 'cart', 'add-to-cart');
     setItems((current) => {
       const existing = current.find((item) => item.productId === product.id && item.color === color && item.size === size);
       if (existing) {

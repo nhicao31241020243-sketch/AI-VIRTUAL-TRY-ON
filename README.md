@@ -1,5 +1,11 @@
 # Áo Ảo Thật - AI Virtual Try-On
 
+## Dashboard phân tích sản phẩm & phản hồi
+
+Nút **Dashboard** luôn hiển thị cố định góc dưới bên trái; nếu chưa đăng nhập, bấm nút sẽ được chuyển tới `/admin/login`. Dùng `ADMIN_METRICS_PASSWORD` để truy cập `/admin/metrics`. Có 👍/👎, lý do, nhận xét và dashboard traffic, clicks, thời gian, funnel, feedback, chất lượng dữ liệu, retention.
+
+Thiết lập `ANALYTICS_SECRET` ngẫu nhiên ít nhất 32 ký tự. Không có Supabase thì chỉ môi trường phát triển dùng dữ liệu cục bộ trong `.data/analytics`; production yêu cầu Supabase và migration mới. Xem [thiết lập, phân quyền, định nghĩa chỉ số và kiểm tra](docs/ANALYTICS.md).
+
 Ứng dụng thử đồ bằng AI xây dựng với Next.js 15 (App Router), TypeScript và Tailwind CSS.
 Khách chọn sản phẩm, tải ảnh toàn thân hoặc chọn người mẫu, AI ghép trang phục, xem kết quả Trước/Sau rồi thêm vào giỏ.
 

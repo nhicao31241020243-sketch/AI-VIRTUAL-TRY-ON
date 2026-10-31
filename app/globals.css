@@ -19,3 +19,8 @@
 @keyframes spin-slow { to { transform: rotate(360deg); } }
 .animate-spin-slow { animation: spin-slow 1.2s linear infinite; }
 input[type='range'] { accent-color: #1d2420; }
+
+.dashboard-launcher { left: max(1rem, env(safe-area-inset-left)); bottom: max(1rem, env(safe-area-inset-bottom)); }
+body:has([aria-modal='true']) .dashboard-launcher { display: none; }
+:focus-visible { outline: 2px solid #52624a; outline-offset: 3px; }
+button:disabled { cursor: not-allowed; }

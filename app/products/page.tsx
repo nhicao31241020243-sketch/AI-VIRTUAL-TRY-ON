@@ -34,7 +34,7 @@ export default function ProductsPage() {
           <button
             key={item.value}
             type="button"
-            onClick={() => setFilter(item.value)}
+            data-analytics="catalog-filter" data-analytics-feature="catalog" onClick={() => setFilter(item.value)}
             aria-pressed={filter === item.value}
             className={`rounded-full border px-4 py-2 text-sm font-semibold ${filter === item.value ? 'border-ink bg-ink text-white' : 'border-ink/15 bg-white text-ink'}`}
           >
@@ -63,9 +63,9 @@ export default function ProductsPage() {
                     <span>{product.reviews} đánh giá</span>
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-2">
-                    <a href={`/?product=${product.id}`} className="btn-secondary justify-center px-3 py-2 text-sm">Xem</a>
+                    <a data-analytics="catalog-view" data-analytics-feature="catalog" href={`/?product=${product.id}`} className="btn-secondary justify-center px-3 py-2 text-sm">Xem</a>
                     <a
-                      href={`/?product=${product.id}&tryon=1`}
+                      data-analytics="catalog-tryon" data-analytics-feature="tryon" href={`/?product=${product.id}&tryon=1`}
                       className="btn-primary justify-center px-3 py-2 text-sm"
                       onClick={() => recordMetric({ type: 'try_on_click', at: Date.now() })}
                     >

@@ -1,17 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Download, ShoppingBag, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { submitTryOnFeedback, type TryOnFeedbackInput } from '@/services/tryon';
+import { Download, ShoppingBag, Sparkles } from 'lucide-react';
+import { FeedbackWidget } from '@/components/FeedbackWidget';
 import type { Product } from '@/types/product';
 import type { TryOnProvider } from '@/types/virtual-try-on';
 
-const feedbackReasons: NonNullable<TryOnFeedbackInput['reason']>[] = [
-  'áo méo',
-  'sai màu',
-  'mặt/tay lỗi',
-  'khác',
-];
 
 interface ResultViewProps {
   product: Product;
@@ -50,10 +44,6 @@ export function ResultView({
   const [isDragging, setIsDragging] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [stageWidth, setStageWidth] = useState(0);
-  const [feedbackRating, setFeedbackRating] = useState<TryOnFeedbackInput['rating'] | null>(null);
-  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
-  const [feedbackPending, setFeedbackPending] = useState(false);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -87,29 +77,6 @@ export function ResultView({
     }
   };
 
-  const sendFeedback = async (
-    rating: TryOnFeedbackInput['rating'],
-    reason?: TryOnFeedbackInput['reason'],
-  ) => {
-    if (!provider || inferenceTimeMs === null || feedbackPending || feedbackSubmitted) return;
-    setFeedbackPending(true);
-    setFeedbackError(null);
-    try {
-      await submitTryOnFeedback({
-        productId: product.id,
-        color,
-        provider,
-        durationMs: inferenceTimeMs,
-        rating,
-        ...(reason ? { reason } : {}),
-      });
-      setFeedbackSubmitted(true);
-    } catch (error) {
-      setFeedbackError(error instanceof Error ? error.message : 'Không thể gửi đánh giá. Vui lòng thử lại.');
-    } finally {
-      setFeedbackPending(false);
-    }
-  };
 
   const elapsedLabel = inferenceTimeMs === null
     ? null
@@ -202,55 +169,11 @@ export function ResultView({
               {product.sizes.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
-          <section className="mt-5 rounded-xl border border-ink/10 bg-white p-4" aria-label="Đánh giá kết quả thử đồ">
-            <p className="text-sm font-semibold">Kết quả này hữu ích không?</p>
-            {feedbackSubmitted ? (
-              <p className="mt-3 text-sm text-moss" role="status">Cảm ơn bạn đã gửi đánh giá.</p>
-            ) : (
-              <>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setFeedbackRating('up'); void sendFeedback('up'); }}
-                    disabled={feedbackPending}
-                    aria-label="Đánh giá thích kết quả"
-                    className={`btn-secondary py-2 ${feedbackRating === 'up' ? 'border-moss text-moss' : ''}`}
-                  >
-                    <ThumbsUp size={17} /> Thích
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFeedbackRating('down')}
-                    disabled={feedbackPending}
-                    aria-label="Đánh giá không thích kết quả"
-                    className={`btn-secondary py-2 ${feedbackRating === 'down' ? 'border-clay text-clay' : ''}`}
-                  >
-                    <ThumbsDown size={17} /> Chưa tốt
-                  </button>
-                </div>
-                {feedbackRating === 'down' && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {feedbackReasons.map((reason) => (
-                      <button
-                        type="button"
-                        key={reason}
-                        onClick={() => { void sendFeedback('down', reason); }}
-                        disabled={feedbackPending}
-                        className="rounded-full border border-ink/15 px-3 py-1.5 text-xs hover:border-ink/50 disabled:opacity-50"
-                      >
-                        {reason}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {feedbackError && <p role="alert" className="mt-2 text-xs text-red-700">{feedbackError}</p>}
-              </>
-            )}
-          </section>
-          <button type="button" onClick={download} className="btn-secondary mt-5 w-full py-3"><Download size={17} /> Lưu ảnh</button>
+          <div className="mt-5"><FeedbackWidget feature="tryon" title="Kết quả này hữu ích không?" /></div>
+          <button type="button" data-analytics="download" data-analytics-feature="tryon" onClick={download} className="btn-secondary mt-5 w-full py-3"><Download size={17} /> Lưu ảnh</button>
           {downloadError && <p role="alert" className="mt-2 text-xs text-red-700">{downloadError}</p>}
-          <button type="button" onClick={onAddToCart} className="btn-secondary mt-3 w-full py-3"><ShoppingBag size={17} /> Thêm vào giỏ</button>
-          <button type="button" onClick={onBuyNow} className="btn-primary mt-3 w-full py-4"><ShoppingBag size={18} /> Mua ngay</button>
+          <button type="button" data-analytics="add-to-cart" data-analytics-feature="cart" onClick={onAddToCart} className="btn-secondary mt-3 w-full py-3"><ShoppingBag size={17} /> Thêm vào giỏ</button>
+          <button type="button" data-analytics="add-to-cart" data-analytics-feature="cart" onClick={onBuyNow} className="btn-primary mt-3 w-full py-4"><ShoppingBag size={18} /> Mua ngay</button>
           <p className="mt-3 min-h-5 text-sm font-semibold text-moss" role="status">{cartMessage}</p>
         </aside>
       </div>

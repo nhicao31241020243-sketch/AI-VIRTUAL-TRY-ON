@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createRateLimiter } from '@/lib/rate-limit';
+import { sameOrigin } from '@/lib/analytics-http';
 import {
   ADMIN_METRICS_COOKIE,
   ADMIN_METRICS_SESSION_SECONDS,
@@ -22,6 +23,7 @@ function getClientIp(request: Request): string {
 }
 
 export async function POST(request: Request) {
+  if (!sameOrigin(request)) return NextResponse.json({ error: 'Nguồn yêu cầu không hợp lệ.' }, { status: 403 });
   const limit = await loginRateLimiter.check(getClientIp(request));
   if (!limit.allowed) {
     return NextResponse.json(
@@ -85,20 +87,23 @@ export async function POST(request: Request) {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    path: '/api/admin',
+    path: '/',
     maxAge: ADMIN_METRICS_SESSION_SECONDS,
   });
+  response.headers.append('Set-Cookie', `${ADMIN_METRICS_COOKIE}=; Path=/api/admin; Max-Age=0; HttpOnly; SameSite=Lax`);
   return response;
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  if (!sameOrigin(request)) return NextResponse.json({ error: 'Nguồn yêu cầu không hợp lệ.' }, { status: 403 });
   const response = NextResponse.json({ authenticated: false });
   response.cookies.set(ADMIN_METRICS_COOKIE, '', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    path: '/api/admin',
+    path: '/',
     maxAge: 0,
   });
+  response.headers.append('Set-Cookie', `${ADMIN_METRICS_COOKIE}=; Path=/api/admin; Max-Age=0; HttpOnly; SameSite=Lax`);
   return response;
 }

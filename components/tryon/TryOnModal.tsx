@@ -312,6 +312,7 @@ export function TryOnModal({
                     start();
                   }}
                   disabled={!selectedSource || !privacyAccepted}
+                  data-analytics="tryon-start" data-analytics-feature="tryon"
                   className="btn-primary w-full py-4 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
                 >
                   <Sparkles size={18} /> Bắt đầu thử đồ AI

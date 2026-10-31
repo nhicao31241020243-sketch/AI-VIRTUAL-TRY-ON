@@ -179,7 +179,7 @@ function ProductPage() {
                 recordMetric({ type: 'try_on_click', at: Date.now() });
                 setModalOpen(true);
               }}
-              className="btn-primary mt-7 w-full py-4 text-base sm:mt-8 sm:py-5"
+              data-analytics="tryon-open" data-analytics-feature="tryon" className="btn-primary mt-7 w-full py-4 text-base sm:mt-8 sm:py-5"
             >
               <Sparkles size={19} /> Thử đồ bằng AI
             </button>
